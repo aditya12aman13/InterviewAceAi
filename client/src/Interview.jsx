@@ -269,6 +269,34 @@ function Interview() {
         setCurrentQuestion((previous) => previous + 1);
         setAnswer("");
       } else {
+        // Automatically save completed session to MongoDB database
+        const userEmail = localStorage.getItem("userEmail") || "candidate@gmail.com";
+        const sumScore = currentResults.reduce((acc, curr) => acc + (Number(curr.evaluation?.score) || 0), 0);
+        const avgScore = Number((sumScore / Math.max(1, currentResults.length)).toFixed(1));
+        const sessionPayload = {
+          sessionId: `INT-${Math.floor(1000 + Math.random() * 9000)}`,
+          userEmail,
+          date: new Date().toISOString().split("T")[0],
+          role: role || "Full Stack Developer",
+          experience: experience || "Fresher",
+          score: avgScore,
+          percentage: Math.round((avgScore / 10) * 100),
+          status: avgScore >= 8.5 ? "Strong Hire" : avgScore >= 7.0 ? "Competent" : "Needs Practice",
+          totalQuestions: questions.length,
+          answeredQuestions: currentResults.length,
+          results: currentResults,
+        };
+
+        try {
+          await fetch("http://localhost:5001/api/interviews", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(sessionPayload),
+          });
+        } catch (postErr) {
+          console.warn("Could not post session to MongoDB:", postErr);
+        }
+
         window.location.href = "/results";
       }
     } catch (err) {

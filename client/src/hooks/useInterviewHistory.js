@@ -1,9 +1,10 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { INITIAL_PAST_INTERVIEWS } from "../models/interviewData";
+import { getInterviews, saveInterviewSession, deleteInterviewSession } from "../services/api";
 
-export function useInterviewHistory() {
+export function useInterviewHistory(userEmail) {
   const [pastInterviews, setPastInterviews] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("pastInterviews") || "[]");
@@ -16,24 +17,59 @@ export function useInterviewHistory() {
 
   const [filterRole, setFilterRole] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [isDbSynced, setIsDbSynced] = useState(false);
+
+  // Sync interviews from MongoDB backend
+  useEffect(() => {
+    let isMounted = true;
+    getInterviews(userEmail).then((remote) => {
+      if (isMounted && Array.isArray(remote) && remote.length > 0) {
+        setPastInterviews(remote);
+        try {
+          localStorage.setItem("pastInterviews", JSON.stringify(remote));
+        } catch (e) {
+          console.warn("Could not cache interviews:", e);
+        }
+        setIsDbSynced(true);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [userEmail]);
 
   const saveInterviews = (updatedList) => {
     setPastInterviews(updatedList);
     try {
       localStorage.setItem("pastInterviews", JSON.stringify(updatedList));
     } catch (e) {
-      console.error("Failed to store pastInterviews:", e);
+      console.error("Failed to store pastInterviews in localStorage:", e);
     }
   };
 
-  const addInterview = (newSession) => {
-    const updated = [newSession, ...pastInterviews];
+  const addInterview = async (newSession) => {
+    const sessionWithEmail = { ...newSession, userEmail: userEmail || "candidate@gmail.com" };
+    const updated = [sessionWithEmail, ...pastInterviews];
     saveInterviews(updated);
+
+    try {
+      await saveInterviewSession(sessionWithEmail);
+      setIsDbSynced(true);
+    } catch (e) {
+      console.warn("Could not persist session to MongoDB:", e);
+    }
   };
 
-  const deleteInterview = (id) => {
-    const updated = pastInterviews.filter((item) => item.id !== id);
+  const deleteInterview = async (id) => {
+    const updated = pastInterviews.filter((item) => (item.id !== id && item.sessionId !== id));
     saveInterviews(updated);
+
+    try {
+      await deleteInterviewSession(id);
+    } catch (e) {
+      console.warn("Could not delete session from MongoDB:", e);
+    }
   };
 
   // Compute stats
@@ -80,7 +116,8 @@ export function useInterviewHistory() {
       const matchesSearch =
         searchTerm === "" ||
         interview.role?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        interview.id?.toLowerCase().includes(searchTerm.toLowerCase());
+        interview.id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        interview.sessionId?.toLowerCase().includes(searchTerm.toLowerCase());
       return matchesRole && matchesSearch;
     });
   }, [pastInterviews, filterRole, searchTerm]);
@@ -89,12 +126,15 @@ export function useInterviewHistory() {
   const loadInterviewForReview = (interview, navigate) => {
     try {
       localStorage.setItem("interviewResults", JSON.stringify(interview.results || []));
-      localStorage.setItem("interviewSettings", JSON.stringify({
-        role: interview.role || "Full Stack Developer",
-        experience: interview.experience || "Fresher",
-        count: interview.totalQuestions || 5,
-        type: "mixed"
-      }));
+      localStorage.setItem(
+        "interviewSettings",
+        JSON.stringify({
+          role: interview.role || "Full Stack Developer",
+          experience: interview.experience || "Fresher",
+          count: interview.totalQuestions || 5,
+          type: "mixed",
+        })
+      );
     } catch (e) {
       console.warn("Could not set interviewResults in localStorage", e);
     }
@@ -125,7 +165,7 @@ export function useInterviewHistory() {
     doc.setFont("helvetica", "normal");
     doc.setTextColor(148, 163, 184); // slate-400
     doc.text("OFFICIAL PERFORMANCE EVALUATION REPORT", 16, 28);
-    doc.text(`SESSION ID: ${interview.id || "INT-RECORD"}`, 16, 35);
+    doc.text(`SESSION ID: ${interview.id || interview.sessionId || "INT-RECORD"}`, 16, 35);
 
     // Right Badge
     doc.setFillColor(30, 41, 59);
@@ -147,7 +187,7 @@ export function useInterviewHistory() {
     const metaData = [
       ["Candidate Name", candidateName, "Assessment Date", interview.date || "Recent"],
       ["Target Role", interview.role || "Software Engineer", "Experience Level", interview.experience || "Fresher"],
-      ["Overall Score", `${interview.score || 8.0} / 10 (${interview.percentage || 80}%)`, "Completion Status", "Verified 100%"]
+      ["Overall Score", `${interview.score || 8.0} / 10 (${interview.percentage || 80}%)`, "Completion Status", "Verified 100%"],
     ];
 
     autoTable(doc, {
@@ -159,8 +199,8 @@ export function useInterviewHistory() {
         0: { fontStyle: "bold", textColor: [100, 116, 139], cellWidth: 38 },
         1: { fontStyle: "bold", cellWidth: 55 },
         2: { fontStyle: "bold", textColor: [100, 116, 139], cellWidth: 40 },
-        3: { fontStyle: "bold", cellWidth: 55 }
-      }
+        3: { fontStyle: "bold", cellWidth: 55 },
+      },
     });
 
     const startYQuestions = (doc.lastAutoTable?.finalY || 80) + 8;
@@ -174,7 +214,7 @@ export function useInterviewHistory() {
       r.question || "Question prompt",
       r.answer || "(No response recorded)",
       `${r.evaluation?.score ?? "N/A"}/10`,
-      r.evaluation?.feedback || "Evaluation complete."
+      r.evaluation?.feedback || "Evaluation complete.",
     ]);
 
     autoTable(doc, {
@@ -189,10 +229,10 @@ export function useInterviewHistory() {
         1: { cellWidth: 45 },
         2: { cellWidth: 50 },
         3: { cellWidth: 16, halign: "center", fontStyle: "bold" },
-        4: { cellWidth: 65 }
+        4: { cellWidth: 65 },
       },
       alternateRowStyles: { fillColor: [248, 250, 252] },
-      margin: { left: 14, right: 14 }
+      margin: { left: 14, right: 14 },
     });
 
     // Footer
@@ -221,6 +261,7 @@ export function useInterviewHistory() {
     searchTerm,
     setSearchTerm,
     stats,
+    isDbSynced,
     addInterview,
     deleteInterview,
     loadInterviewForReview,

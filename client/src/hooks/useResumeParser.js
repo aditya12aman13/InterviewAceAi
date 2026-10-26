@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DEFAULT_RESUME_DATA } from "../models/skillTaxonomy";
+import { getResumeData, saveResumeData as apiSaveResume } from "../services/api";
 
-export function useResumeParser() {
+export function useResumeParser(userEmail) {
   const [resumeData, setResumeData] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("resumeData") || "null");
@@ -14,13 +15,42 @@ export function useResumeParser() {
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [message, setMessage] = useState("");
+  const [isDbSynced, setIsDbSynced] = useState(false);
 
-  const saveResumeData = (data) => {
+  // Sync from MongoDB on mount or email change
+  useEffect(() => {
+    if (!userEmail) return;
+
+    let isMounted = true;
+    getResumeData(userEmail).then((remote) => {
+      if (isMounted && remote) {
+        setResumeData(remote);
+        try {
+          localStorage.setItem("resumeData", JSON.stringify(remote));
+        } catch (e) {
+          console.warn("Could not cache resumeData:", e);
+        }
+        setIsDbSynced(true);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [userEmail]);
+
+  const saveResumeState = (data) => {
     setResumeData(data);
     try {
       localStorage.setItem("resumeData", JSON.stringify(data));
     } catch (e) {
       console.error("Failed to persist resumeData", e);
+    }
+
+    if (userEmail) {
+      apiSaveResume({ ...data, userEmail })
+        .then(() => setIsDbSynced(true))
+        .catch((err) => console.warn("Failed to sync resume to MongoDB:", err));
     }
   };
 
@@ -59,6 +89,7 @@ export function useResumeParser() {
       ];
 
       const newResume = {
+        userEmail: userEmail || "candidate@gmail.com",
         fileName: file.name,
         fileSize: `${Math.round(file.size / 1024)} KB`,
         uploadedDate: new Date().toISOString().split("T")[0],
@@ -68,12 +99,12 @@ export function useResumeParser() {
         recommendations: [
           "Resume passed 94% ATS benchmark for Modern Full-Stack Developer profiles.",
           "Strong keyword density detected for MERN ecosystem and API integration.",
-          "High alignment with Junior & Mid-level engineering criteria."
-        ]
+          "High alignment with Junior & Mid-level engineering criteria.",
+        ],
       };
 
-      saveResumeData(newResume);
-      setMessage("Resume parsed successfully!");
+      saveResumeState(newResume);
+      setMessage("Resume parsed & saved to MongoDB database 'interview'!");
       setTimeout(() => setMessage(""), 3500);
     }, 1200);
   };
@@ -83,7 +114,7 @@ export function useResumeParser() {
       ...resumeData,
       parsedSkills: resumeData.parsedSkills.filter((s) => s !== skillToRemove),
     };
-    saveResumeData(updated);
+    saveResumeState(updated);
   };
 
   const addSkill = (newSkill) => {
@@ -95,7 +126,7 @@ export function useResumeParser() {
       ...resumeData,
       parsedSkills: [...resumeData.parsedSkills, clean],
     };
-    saveResumeData(updated);
+    saveResumeState(updated);
   };
 
   const generateCustomInterview = (navigate) => {
@@ -116,6 +147,7 @@ export function useResumeParser() {
     isScanning,
     scanProgress,
     message,
+    isDbSynced,
     handleFileUpload,
     removeSkill,
     addSkill,

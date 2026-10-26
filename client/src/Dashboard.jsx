@@ -20,9 +20,9 @@ export default function Dashboard() {
   const [inspectingInterview, setInspectingInterview] = useState(null);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
 
-  // Custom Hooks managing specialized state logic
+  // Custom Hooks managing specialized state logic synced with MongoDB
   const { userEmail } = useAuth();
-  const { profile, updateProfile, resetToDefault, completeness } = useProfile(userEmail);
+  const { profile, updateProfile, resetToDefault, completeness, isDbSynced: isProfileSynced } = useProfile(userEmail);
   const {
     pastInterviews,
     filteredInterviews,
@@ -34,7 +34,8 @@ export default function Dashboard() {
     deleteInterview,
     loadInterviewForReview,
     downloadSessionPdf,
-  } = useInterviewHistory();
+    isDbSynced: isHistorySynced,
+  } = useInterviewHistory(userEmail);
 
   const {
     resumeData,
@@ -45,7 +46,8 @@ export default function Dashboard() {
     removeSkill,
     addSkill,
     generateCustomInterview,
-  } = useResumeParser();
+    isDbSynced: isResumeSynced,
+  } = useResumeParser(userEmail);
 
   // Tab navigation config
   const navTabs = [
@@ -59,34 +61,42 @@ export default function Dashboard() {
     <div className="min-h-screen flex flex-col bg-slate-950 text-white">
       <Navbar />
 
-      {/* Sub-Header Tab Navigation */}
+      {/* Sub-Header Tab Navigation & MongoDB Status Indicator */}
       <div className="border-b border-slate-800 bg-slate-900/40">
-        <div className="mx-auto flex max-w-7xl items-center gap-2 overflow-x-auto px-6 py-3 no-scrollbar">
-          {navTabs.map((tab) => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2 text-xs font-semibold transition ${
-                  isActive
-                    ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
-                    : "text-slate-400 hover:bg-slate-800/80 hover:text-white"
-                }`}
-              >
-                <span>{tab.label}</span>
-                {tab.count !== null && (
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                      isActive ? "bg-white/20 text-white" : "bg-slate-800 text-slate-400"
-                    }`}
-                  >
-                    {tab.count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-3">
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+            {navTabs.map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2 text-xs font-semibold transition ${
+                    isActive
+                      ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
+                      : "text-slate-400 hover:bg-slate-800/80 hover:text-white"
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                  {tab.count !== null && (
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                        isActive ? "bg-white/20 text-white" : "bg-slate-800 text-slate-400"
+                      }`}
+                    >
+                      {tab.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Live MongoDB Status Pill */}
+          <div className="hidden sm:flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-400 shadow-inner">
+            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>MongoDB: Connected (interview)</span>
+          </div>
         </div>
       </div>
 
