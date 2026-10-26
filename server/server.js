@@ -7,7 +7,9 @@ const User = require("./models/User");
 const InterviewSession = require("./models/InterviewSession");
 const ResumeProfile = require("./models/ResumeProfile");
 const McqTestResult = require("./models/McqTestResult");
+const OtpVerification = require("./models/OtpVerification");
 const { FULL_STACK_30_MCQ, getRoleQuestions } = require("./questionBank");
+const { seedContributorAccounts } = require("./seedContributors");
 
 const app = express();
 
@@ -20,8 +22,9 @@ app.use(express.json({ limit: "5mb" }));
 
 // Connect to MongoDB
 connectDB().then(async () => {
-  // 1. Seed sample past interviews into MongoDB if collection is empty
   try {
+    // Seed and verify contributor accounts (Suyog, Aditya, Rishav)
+    await seedContributorAccounts();
     const count = await InterviewSession.countDocuments();
     if (count === 0) {
       console.log("🌱 Seeding default interview sessions into MongoDB database 'interview'...");
@@ -175,7 +178,211 @@ app.get("/", (req, res) => {
 });
 
 // ==========================================
-// 2. CANDIDATE PROFILE API (MONGODB)
+// 2. AUTHENTICATION & OTP VERIFICATION API (MONGODB)
+// ==========================================
+
+// 1. Generate & Save Random 6-Digit OTP in MongoDB
+app.post("/api/auth/send-otp", async (req, res) => {
+  try {
+    const { email, name } = req.body || {};
+    if (!email || !email.trim()) {
+      return res.status(400).json({ success: false, message: "A valid email address is required." });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    // Generate random 6-digit numeric OTP
+    const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Store in MongoDB OtpVerification (with 10-minute TTL auto-expiration)
+    await OtpVerification.findOneAndUpdate(
+      { email: cleanEmail },
+      {
+        email: cleanEmail,
+        otp: generatedOtp,
+        purpose: "registration",
+        createdAt: new Date(),
+      },
+      { upsert: true, new: true }
+    );
+
+    console.log(`🔐 MongoDB OTP Generated: [${generatedOtp}] for candidate: ${cleanEmail}`);
+
+    res.json({
+      success: true,
+      message: "Random OTP generated and stored in MongoDB.",
+      otp: generatedOtp, // Sent back so frontend pop-up message box displays it immediately for verification
+      email: cleanEmail,
+      expiresInSeconds: 600,
+    });
+  } catch (error) {
+    console.error("Error generating OTP in MongoDB:", error);
+    res.status(500).json({ success: false, message: "Failed to generate OTP in MongoDB." });
+  }
+});
+
+// 2. Verify OTP & Create New Verified Account in MongoDB
+app.post("/api/auth/verify-otp-register", async (req, res) => {
+  try {
+    const { email, name, password, targetRole, experience, otp } = req.body || {};
+
+    if (!email || !otp) {
+      return res.status(400).json({ success: false, message: "Email and OTP are required." });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanOtp = String(otp).trim();
+
+    // Look up OTP record in MongoDB
+    const otpRecord = await OtpVerification.findOne({ email: cleanEmail });
+
+    if (!otpRecord) {
+      return res.status(400).json({
+        success: false,
+        message: "OTP expired or not found. Please request a new verification code.",
+      });
+    }
+
+    if (otpRecord.otp !== cleanOtp) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid OTP code entered. Please check the pop-up code and try again.",
+      });
+    }
+
+    // OTP matched! Delete consumed OTP record
+    await OtpVerification.deleteOne({ _id: otpRecord._id });
+
+    // Upsert verified User in MongoDB
+    const candidateName =
+      (name && name.trim()) ||
+      cleanEmail.split("@")[0].charAt(0).toUpperCase() + cleanEmail.split("@")[0].slice(1);
+
+    const user = await User.findOneAndUpdate(
+      { email: cleanEmail },
+      {
+        email: cleanEmail,
+        name: candidateName,
+        password: password || "password123",
+        targetRole: targetRole || "Full Stack Developer",
+        experience: experience || "Fresher",
+        isVerified: true,
+        skills: "React, Node.js, Express, MongoDB, JavaScript, Tailwind CSS, REST APIs, Git",
+        targetCompanies: "Google, Microsoft, Amazon, TCS, Infosys",
+        bio: `Passionate ${targetRole || "Software"} Engineer preparing with InterviewAce AI.`,
+      },
+      { upsert: true, new: true }
+    );
+
+    // Seed default resume profile for the newly registered user if missing
+    const existingResume = await ResumeProfile.findOne({ userEmail: cleanEmail });
+    if (!existingResume) {
+      await ResumeProfile.create({
+        userEmail: cleanEmail,
+        fileName: `${candidateName.replace(/\s+/g, "_")}_Resume.pdf`,
+        fileSize: "215 KB",
+        uploadedDate: new Date().toISOString().split("T")[0],
+        parsedSkills: ["JavaScript", "React 19", "Node.js", "Express", "MongoDB", "Git"],
+        atsScore: 88,
+        matchRole: user.targetRole,
+        recommendations: [
+          "New candidate account successfully verified via MongoDB OTP.",
+          "Profile linked to MongoDB database 'interview'.",
+          "Ready to practice verbal mock interviews and take 25-minute 30-MCQ tests!"
+        ]
+      });
+    }
+
+    console.log(`✅ User registered and verified via MongoDB OTP: ${user.name} (${user.email})`);
+
+    res.json({
+      success: true,
+      message: "Account verified and registered successfully!",
+      user: {
+        name: user.name,
+        email: user.email,
+        targetRole: user.targetRole,
+        experience: user.experience,
+      },
+    });
+  } catch (error) {
+    console.error("Error verifying OTP and registering:", error);
+    res.status(500).json({ success: false, message: "Registration failed." });
+  }
+});
+
+// 3. User Login
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    if (!email || !email.trim()) {
+      return res.status(400).json({ success: false, message: "Email is required." });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    let user = await User.findOne({ email: cleanEmail });
+
+    if (!user) {
+      // Auto-create candidate account if logging in with email
+      const candidateName = cleanEmail.split("@")[0].charAt(0).toUpperCase() + cleanEmail.split("@")[0].slice(1);
+      user = await User.create({
+        email: cleanEmail,
+        name: candidateName,
+        password: password || "password123",
+        targetRole: "Full Stack Developer",
+        experience: "Fresher",
+        isVerified: true,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Login successful",
+      user: {
+        name: user.name,
+        email: user.email,
+        targetRole: user.targetRole,
+        experience: user.experience,
+      },
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+    res.status(500).json({ success: false, message: "Login failed." });
+  }
+});
+
+// 4. Contributor Accounts Directory (For 1-Click Login)
+app.get("/api/auth/contributors", async (req, res) => {
+  res.json({
+    success: true,
+    contributors: [
+      {
+        name: "Suyog Shelke",
+        email: "suyog@gmail.com",
+        role: "Full Stack Developer",
+        tag: "Backend & AI Lead",
+        avatar: "👨‍💻",
+      },
+      {
+        name: "Aditya Aman",
+        email: "aditya@gmail.com",
+        role: "Frontend Developer",
+        tag: "Frontend & UI/UX Lead",
+        avatar: "🎨",
+      },
+      {
+        name: "Rishav Kumar",
+        email: "rishav@gmail.com",
+        role: "Python / AI Engineer",
+        tag: "MCQ & Analytics Lead",
+        avatar: "🧠",
+      },
+    ],
+  });
+});
+
+// ==========================================
+// 3. CANDIDATE PROFILE API (MONGODB)
 // ==========================================
 app.get("/api/profile", async (req, res) => {
   try {

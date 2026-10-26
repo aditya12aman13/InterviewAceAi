@@ -14,6 +14,14 @@ const userSchema = new mongoose.Schema(
       default: "Candidate",
       trim: true,
     },
+    password: {
+      type: String,
+      default: "password123",
+    },
+    isVerified: {
+      type: Boolean,
+      default: false,
+    },
     targetRole: {
       type: String,
       default: "Full Stack Developer",

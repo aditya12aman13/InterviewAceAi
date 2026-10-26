@@ -105,13 +105,13 @@ export default function Navbar() {
                 onClick={() => navigate("/login")}
                 className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
               >
-                Login
+                Sign In
               </button>
               <button
-                onClick={() => navigate("/login")}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-blue-500/20 transition hover:bg-blue-500"
+                onClick={() => navigate("/signup")}
+                className="rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-blue-500/20 transition hover:from-blue-500 hover:to-indigo-500"
               >
-                Get Started
+                Sign Up (OTP)
               </button>
             </div>
           )}

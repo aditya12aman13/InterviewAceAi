@@ -183,3 +183,61 @@ export async function getMcqTestById(testId) {
     return null;
   }
 }
+
+// 5. Authentication & OTP Verification APIs
+export async function sendOtp(email, name = "") {
+  try {
+    const res = await fetch(`${API_BASE_URL}/auth/send-otp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, name }),
+    });
+    return await res.json();
+  } catch (err) {
+    console.error("sendOtp API error:", err.message);
+    return { success: false, message: err.message };
+  }
+}
+
+export async function verifyOtpRegister(payload) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/auth/verify-otp-register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return await res.json();
+  } catch (err) {
+    console.error("verifyOtpRegister API error:", err.message);
+    return { success: false, message: err.message };
+  }
+}
+
+export async function loginUser(email, password = "") {
+  try {
+    const res = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    return await res.json();
+  } catch (err) {
+    console.error("loginUser API error:", err.message);
+    return { success: false, message: err.message };
+  }
+}
+
+export async function getContributors() {
+  try {
+    const res = await fetch(`${API_BASE_URL}/auth/contributors`);
+    const data = await res.json();
+    if (data.success && Array.isArray(data.contributors)) {
+      return data.contributors;
+    }
+    return [];
+  } catch (err) {
+    console.warn("getContributors API error:", err.message);
+    return [];
+  }
+}
+
