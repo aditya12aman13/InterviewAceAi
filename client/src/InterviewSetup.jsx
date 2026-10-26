@@ -27,6 +27,7 @@ function InterviewSetup() {
     localStorage.removeItem("interviewQuestions");
     localStorage.removeItem("interviewAnswers");
     localStorage.removeItem("interviewEvaluations");
+    localStorage.removeItem("interviewResults");
 
     window.location.href = "/interview";
   };

@@ -248,6 +248,23 @@ function Interview() {
         JSON.stringify(updatedEvaluations)
       );
 
+      // Build and persist complete interviewResults for Results page & PDF generator
+      const currentResults = questions.map((q, idx) => {
+        if (idx <= currentQuestion && updatedEvaluations[idx]) {
+          return {
+            question: q,
+            answer: updatedAnswers[idx] || "",
+            evaluation: updatedEvaluations[idx],
+          };
+        }
+        return null;
+      }).filter(Boolean);
+
+      localStorage.setItem(
+        "interviewResults",
+        JSON.stringify(currentResults)
+      );
+
       if (currentQuestion < questions.length - 1) {
         setCurrentQuestion((previous) => previous + 1);
         setAnswer("");

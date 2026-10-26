@@ -17,23 +17,56 @@ function Results() {
     }
   })();
 
-  const jobRole = interviewData.jobRole || "Software Developer";
-  const experience = interviewData.experience || "Intermediate";
-  const interviewType = interviewData.interviewType || "Technical Screening";
-  const totalQuestions = Number(interviewData.questions) || 10;
+  const jobRole = interviewData.jobRole || "Full Stack Developer";
+  const experience = interviewData.experience || "Fresher";
+  const interviewType = interviewData.interviewType || "Technical";
 
-  const [results] = useState(() => {
+  // Resilient Results state: reads interviewResults OR reconstructs from raw questions/answers/evaluations
+  const [results, setResults] = useState(() => {
     try {
+      // 1. Check interviewResults directly
       const savedResults = JSON.parse(
         localStorage.getItem("interviewResults") || "[]"
       );
 
-      return Array.isArray(savedResults) ? savedResults : [];
+      if (Array.isArray(savedResults) && savedResults.length > 0) {
+        return savedResults;
+      }
+
+      // 2. Fallback: Reconstruct from interviewQuestions, interviewAnswers, and interviewEvaluations
+      const savedQuestions = JSON.parse(
+        localStorage.getItem("interviewQuestions") || "[]"
+      );
+      const savedAnswers = JSON.parse(
+        localStorage.getItem("interviewAnswers") || "[]"
+      );
+      const savedEvals = JSON.parse(
+        localStorage.getItem("interviewEvaluations") || "[]"
+      );
+
+      if (Array.isArray(savedQuestions) && savedQuestions.length > 0) {
+        const reconstructed = savedQuestions
+          .map((q, idx) => ({
+            question: q,
+            answer: savedAnswers[idx] || "",
+            evaluation: savedEvals[idx] || null,
+          }))
+          .filter((item) => item.evaluation || item.answer);
+
+        if (reconstructed.length > 0) {
+          localStorage.setItem("interviewResults", JSON.stringify(reconstructed));
+          return reconstructed;
+        }
+      }
+
+      return [];
     } catch (error) {
       console.error("Unable to read interview results:", error);
       return [];
     }
   });
+
+  const totalQuestions = Number(interviewData.questions) || (results.length > 0 ? results.length : 5);
 
   const answeredQuestions = results.filter(
     (item) =>
@@ -105,6 +138,67 @@ function Results() {
     window.location.href = "/setup";
   };
 
+  // Helper to load sample evaluated data for quick testing & demonstration
+  const loadSampleData = () => {
+    const sampleQuestions = [
+      "What is the difference between props and state in React?",
+      "What is a REST API and what are the standard HTTP methods?",
+      "Explain the difference between synchronous and asynchronous JavaScript.",
+      "How does database indexing improve query performance?",
+      "What are the best practices for handling errors in a full-stack application?"
+    ];
+
+    const sampleAnswers = [
+      "Props are read-only properties passed from parent to child components, whereas state is component-internal and mutable using useState.",
+      "A REST API uses HTTP methods like GET to read data, POST to create records, PUT/PATCH to update, and DELETE to remove resources with standard status codes.",
+      "Synchronous execution blocks subsequent tasks until completion, while asynchronous execution uses the event loop, Promises, and async/await for non-blocking I/O.",
+      "Database indexing creates lookup data structures (like B-Trees) allowing the database engine to find records quickly without executing full table scans.",
+      "Best practices include using try-catch blocks, centralized Express error middleware, meaningful HTTP status codes, and user-friendly error responses."
+    ];
+
+    const sampleEvals = [
+      {
+        score: 9,
+        feedback: "Clear, accurate, and concise distinction between props and state in React.",
+        strengths: ["Accurately identified props as read-only.", "Correctly stated state is mutable."],
+        improvements: ["Could mention state changes trigger component re-renders."]
+      },
+      {
+        score: 8,
+        feedback: "Solid understanding of REST architecture and standard HTTP verb mapping.",
+        strengths: ["Correct HTTP method mapping.", "Good conceptual clarity."],
+        improvements: ["Could mention status codes like 200, 201, and 404."]
+      },
+      {
+        score: 9,
+        feedback: "Accurate distinction highlighting non-blocking execution and the JavaScript event loop.",
+        strengths: ["Mentioned async/await and Promises.", "Clear explanation of blocking vs non-blocking."],
+        improvements: ["Could explain microtask vs macrotask execution."]
+      },
+      {
+        score: 9,
+        feedback: "Precise definition of indexing mechanisms and avoiding full table scans.",
+        strengths: ["Mentioned B-tree lookup structures.", "Highlighted query performance improvements."],
+        improvements: ["Could mention the write overhead of indexes on inserts."]
+      },
+      {
+        score: 8,
+        feedback: "Comprehensive coverage of client and server error handling architectures.",
+        strengths: ["Mentioned centralized Express middleware.", "Emphasized standard HTTP status codes."],
+        improvements: ["Could mention logging libraries like Winston or Morgan."]
+      }
+    ];
+
+    const sampleResults = sampleQuestions.map((q, idx) => ({
+      question: q,
+      answer: sampleAnswers[idx],
+      evaluation: sampleEvals[idx],
+    }));
+
+    localStorage.setItem("interviewResults", JSON.stringify(sampleResults));
+    setResults(sampleResults);
+  };
+
   // Official PDF Report Generator using jsPDF + autoTable
   const generatePDF = () => {
     setIsGeneratingPDF(true);
@@ -146,8 +240,21 @@ function Results() {
       );
 
       // Rating Status Badge in Header
-      const ratingLabel = percentage >= 80 ? "STRONG HIRE" : percentage >= 60 ? "COMPETENT" : "FOUNDATIONAL";
-      const ratingColor = percentage >= 80 ? [16, 185, 129] : percentage >= 60 ? [59, 130, 246] : [245, 158, 11];
+      const ratingLabel = answeredQuestions === 0 
+        ? "INCOMPLETE" 
+        : percentage >= 80 
+          ? "STRONG HIRE" 
+          : percentage >= 60 
+            ? "COMPETENT" 
+            : "FOUNDATIONAL";
+
+      const ratingColor = answeredQuestions === 0
+        ? [100, 116, 139] // slate
+        : percentage >= 80 
+          ? [16, 185, 129] // green
+          : percentage >= 60 
+            ? [59, 130, 246] // blue
+            : [245, 158, 11]; // amber
 
       doc.setFillColor(ratingColor[0], ratingColor[1], ratingColor[2]);
       doc.roundedRect(pageWidth - 65, 14, 50, 14, 3, 3, "F");
@@ -224,7 +331,7 @@ function Results() {
       // Strengths Box
       doc.setFillColor(240, 253, 244);
       doc.setDrawColor(187, 247, 208);
-      const strengthsList = strengths.length > 0 ? strengths.slice(0, 3) : ["Good technical participation and problem-solving attempt."];
+      const strengthsList = strengths.length > 0 ? strengths.slice(0, 3) : ["Session registered. Complete questions to receive AI strengths."];
       const strengthsHeight = 12 + strengthsList.length * 6;
       doc.roundedRect(15, y, pageWidth - 30, strengthsHeight, 2, 2, "FD");
 
@@ -245,7 +352,7 @@ function Results() {
       // Priority Improvements Box
       doc.setFillColor(254, 242, 242);
       doc.setDrawColor(254, 202, 202);
-      const improvementsList = improvements.length > 0 ? improvements.slice(0, 3) : ["Continue revising advanced technical concepts and edge cases."];
+      const improvementsList = improvements.length > 0 ? improvements.slice(0, 3) : ["Continue revising advanced concepts and answering mock questions."];
       const improvementsHeight = 12 + improvementsList.length * 6;
       doc.roundedRect(15, y, pageWidth - 30, improvementsHeight, 2, 2, "FD");
 
@@ -264,18 +371,20 @@ function Results() {
       y += improvementsHeight + 8;
 
       // Detailed Questions Table using autoTable
-      const tableData = results.map((item, idx) => [
-        String(idx + 1),
-        item.question || "N/A",
-        `${Number(item?.evaluation?.score) || 0} / 10`,
-        item?.evaluation?.feedback || "No feedback recorded."
-      ]);
+      const tableData = results.length > 0
+        ? results.map((item, idx) => [
+            String(idx + 1),
+            item.question || "N/A",
+            `${Number(item?.evaluation?.score) || 0} / 10`,
+            item?.evaluation?.feedback || "No feedback recorded."
+          ])
+        : [["-", "No questions were evaluated in this session.", "0 / 10", "Candidate did not submit answers."]];
 
       autoTable(doc, {
         startY: y,
         margin: { left: 15, right: 15, bottom: 20 },
         head: [["#", "Interview Question", "Score", "Gemini AI Evaluation & Feedback"]],
-        body: tableData.length > 0 ? tableData : [["-", "No questions evaluated", "-", "-"]],
+        body: tableData,
         theme: "grid",
         headStyles: {
           fillColor: [15, 23, 42],
@@ -357,29 +466,41 @@ function Results() {
             </p>
           </div>
 
-          <button
-            onClick={generatePDF}
-            disabled={isGeneratingPDF || results.length === 0}
-            className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-3 rounded-xl font-semibold flex items-center gap-2 shadow-lg transition"
-            title="Download Official PDF Report"
-          >
-            {isGeneratingPDF ? (
-              <>
-                <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-                </svg>
-                Generating PDF...
-              </>
-            ) : (
-              <>
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                Download Performance Report (PDF)
-              </>
+          <div className="flex flex-wrap items-center gap-3">
+            {results.length === 0 && (
+              <button
+                onClick={loadSampleData}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl font-semibold flex items-center gap-2 text-sm shadow transition"
+                title="Populate realistic Gemini evaluation sample data for demonstration"
+              >
+                ✨ Load Demo Evaluation
+              </button>
             )}
-          </button>
+
+            <button
+              onClick={generatePDF}
+              disabled={isGeneratingPDF}
+              className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl font-semibold flex items-center gap-2 shadow-lg transition"
+              title="Download Official PDF Report"
+            >
+              {isGeneratingPDF ? (
+                <>
+                  <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                  </svg>
+                  Generating PDF...
+                </>
+              ) : (
+                <>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Download Performance Report (PDF)
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Main Score Card */}
@@ -421,14 +542,33 @@ function Results() {
 
         {/* AI Feedback */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 mb-8">
-          <h2 className="text-2xl font-bold mb-6">
-            🤖 Gemini AI Feedback
-          </h2>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+            <h2 className="text-2xl font-bold">
+              🤖 Gemini AI Feedback
+            </h2>
+
+            {results.length === 0 && (
+              <button
+                onClick={loadSampleData}
+                className="text-xs bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 px-3 py-1.5 rounded-lg border border-blue-500/30 transition"
+              >
+                ✨ Click to Load Demo Sample Feedback
+              </button>
+            )}
+          </div>
 
           {answeredQuestions === 0 ? (
-            <p className="text-slate-400">
-              No interview evaluations found. Please complete an interview first.
-            </p>
+            <div className="text-center py-6">
+              <p className="text-slate-400">
+                No interview answers were evaluated in this session yet.
+              </p>
+              <button
+                onClick={loadSampleData}
+                className="mt-4 bg-blue-500 hover:bg-blue-600 px-5 py-2.5 rounded-xl font-semibold text-sm transition"
+              >
+                ✨ Load Demo Evaluation to Test Features
+              </button>
+            </div>
           ) : (
             <div className="space-y-6">
               {/* Strengths */}
@@ -494,7 +634,15 @@ function Results() {
           {showAnswers && (
             <div className="mt-8 space-y-6">
               {results.length === 0 ? (
-                <p className="text-slate-400">No answers are available yet.</p>
+                <div className="text-center py-6 text-slate-400">
+                  <p>No answers evaluated yet.</p>
+                  <button
+                    onClick={loadSampleData}
+                    className="mt-3 text-sm text-blue-400 hover:text-blue-300 underline"
+                  >
+                    Load demo questions and evaluations
+                  </button>
+                </div>
               ) : (
                 results.map((item, index) => (
                   <div key={index} className="border border-slate-800 rounded-xl p-5">
@@ -549,8 +697,8 @@ function Results() {
         <div className="flex flex-wrap justify-center gap-4 mt-10">
           <button
             onClick={generatePDF}
-            disabled={isGeneratingPDF || results.length === 0}
-            className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-semibold flex items-center gap-2 shadow-lg transition"
+            disabled={isGeneratingPDF}
+            className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-6 py-3 rounded-lg font-semibold flex items-center gap-2 shadow-lg transition"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
