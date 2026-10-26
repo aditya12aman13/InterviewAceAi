@@ -5,6 +5,7 @@ import Dashboard from "./Dashboard";
 import InterviewSetup from "./InterviewSetup";
 import Interview from "./Interview";
 import Results from "./Results";
+import McqTest from "./pages/McqTest";
 import ProtectedRoute from "./components/common/ProtectedRoute";
 
 function App() {
@@ -19,6 +20,7 @@ function App() {
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/setup" element={<InterviewSetup />} />
+          <Route path="/mcq-test" element={<McqTest />} />
           <Route path="/interview" element={<Interview />} />
           <Route path="/results" element={<Results />} />
         </Route>

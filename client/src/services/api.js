@@ -121,3 +121,65 @@ export async function saveResumeData(resumeData) {
     return { success: false, error: err.message };
   }
 }
+
+// 4. Dynamic MCQ Test APIs (Gemini + MongoDB)
+export async function generateMcqQuestions({ role = "Full Stack Developer", experience = "Fresher", count = 30 }) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/generate-questions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role, experience, count }),
+    });
+    const data = await res.json();
+    return data;
+  } catch (err) {
+    console.error("generateMcqQuestions API error:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function saveMcqTestResult(testData) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/mcq-tests`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(testData),
+    });
+    const data = await res.json();
+    return data;
+  } catch (err) {
+    console.error("saveMcqTestResult API error:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function getMcqTests(email) {
+  try {
+    const url = email
+      ? `${API_BASE_URL}/mcq-tests?email=${encodeURIComponent(email)}`
+      : `${API_BASE_URL}/mcq-tests`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.success && Array.isArray(data.tests)) {
+      return data.tests;
+    }
+    return [];
+  } catch (err) {
+    console.warn("getMcqTests API error:", err.message);
+    return [];
+  }
+}
+
+export async function getMcqTestById(testId) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/mcq-tests/${encodeURIComponent(testId)}`);
+    const data = await res.json();
+    if (data.success && data.test) {
+      return data.test;
+    }
+    return null;
+  } catch (err) {
+    console.error("getMcqTestById API error:", err.message);
+    return null;
+  }
+}

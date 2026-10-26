@@ -54,6 +54,14 @@ export default function Navbar() {
                 Mock Setup
               </button>
               <button
+                onClick={() => navigate("/mcq-test")}
+                className={`text-sm font-medium transition ${
+                  isCurrent("/mcq-test") ? "text-blue-400" : "text-slate-300 hover:text-white"
+                }`}
+              >
+                🧠 Mock MCQ Test
+              </button>
+              <button
                 onClick={() => navigate("/results")}
                 className={`text-sm font-medium transition ${
                   isCurrent("/results") ? "text-blue-400" : "text-slate-300 hover:text-white"

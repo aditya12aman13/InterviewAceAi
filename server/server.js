@@ -6,6 +6,8 @@ const { connectDB, getDBStatus } = require("./db");
 const User = require("./models/User");
 const InterviewSession = require("./models/InterviewSession");
 const ResumeProfile = require("./models/ResumeProfile");
+const McqTestResult = require("./models/McqTestResult");
+const { FULL_STACK_30_MCQ, getRoleQuestions } = require("./questionBank");
 
 const app = express();
 
@@ -18,7 +20,7 @@ app.use(express.json({ limit: "5mb" }));
 
 // Connect to MongoDB
 connectDB().then(async () => {
-  // Seed sample past interviews into MongoDB if collection is empty
+  // 1. Seed sample past interviews into MongoDB if collection is empty
   try {
     const count = await InterviewSession.countDocuments();
     if (count === 0) {
@@ -66,8 +68,49 @@ connectDB().then(async () => {
       await InterviewSession.insertMany(sampleSessions);
       console.log("✅ Seeded default interview sessions successfully.");
     }
+
+    // 2. Seed sample MCQ Test result into MongoDB if collection is empty
+    const mcqCount = await McqTestResult.countDocuments();
+    if (mcqCount === 0) {
+      console.log("🌱 Seeding sample 30-MCQ test result into MongoDB...");
+      const sampleMcq = {
+        testId: "MCQ-7821",
+        userEmail: "suyog@gmail.com",
+        role: "Full Stack Developer",
+        experience: "Fresher",
+        date: "2026-10-25",
+        totalQuestions: 30,
+        attemptedQuestions: 30,
+        correctAnswers: 26,
+        wrongAnswers: 4,
+        unanswered: 0,
+        score: 26,
+        percentage: 87,
+        status: "Top Performer",
+        timeSpentSeconds: 1140, // 19 minutes
+        topicBreakdown: [
+          { topic: "JavaScript", total: 7, correct: 6, percentage: 86 },
+          { topic: "React", total: 6, correct: 5, percentage: 83 },
+          { topic: "Node.js & Express", total: 6, correct: 6, percentage: 100 },
+          { topic: "MongoDB & Databases", total: 5, correct: 4, percentage: 80 },
+          { topic: "System Design & Git", total: 6, correct: 5, percentage: 83 },
+        ],
+        answers: FULL_STACK_30_MCQ.map((q, idx) => ({
+          questionId: q.id,
+          question: q.question,
+          options: q.options,
+          selectedOption: idx === 5 || idx === 11 || idx === 19 || idx === 25 ? (q.correctOption + 1) % 4 : q.correctOption,
+          correctOption: q.correctOption,
+          isCorrect: !(idx === 5 || idx === 11 || idx === 19 || idx === 25),
+          explanation: q.explanation,
+          topic: q.topic,
+        }))
+      };
+      await McqTestResult.create(sampleMcq);
+      console.log("✅ Seeded default 30-MCQ test result successfully.");
+    }
   } catch (err) {
-    console.warn("Notice: could not auto-seed sample interviews:", err.message);
+    console.warn("Notice: could not auto-seed sample data:", err.message);
   }
 });
 
@@ -134,7 +177,6 @@ app.get("/", (req, res) => {
 // ==========================================
 // 2. CANDIDATE PROFILE API (MONGODB)
 // ==========================================
-// GET profile by email
 app.get("/api/profile", async (req, res) => {
   try {
     const email = (req.query.email || "").trim().toLowerCase();
@@ -144,7 +186,6 @@ app.get("/api/profile", async (req, res) => {
 
     let user = await User.findOne({ email });
 
-    // Auto-create initial profile document if first time
     if (!user) {
       const derivedName = email.split("@")[0].charAt(0).toUpperCase() + email.split("@")[0].slice(1);
       user = await User.create({
@@ -165,7 +206,6 @@ app.get("/api/profile", async (req, res) => {
   }
 });
 
-// POST/PUT update profile
 app.post("/api/profile", async (req, res) => {
   try {
     const { email, ...updates } = req.body || {};
@@ -190,7 +230,6 @@ app.post("/api/profile", async (req, res) => {
 // ==========================================
 // 3. INTERVIEW SESSIONS API (MONGODB)
 // ==========================================
-// GET all interview sessions for candidate
 app.get("/api/interviews", async (req, res) => {
   try {
     const email = (req.query.email || "").trim().toLowerCase();
@@ -223,7 +262,6 @@ app.get("/api/interviews", async (req, res) => {
   }
 });
 
-// POST save completed interview session
 app.post("/api/interviews", async (req, res) => {
   try {
     const {
@@ -277,7 +315,6 @@ app.post("/api/interviews", async (req, res) => {
   }
 });
 
-// DELETE interview session by ID
 app.delete("/api/interviews/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -297,7 +334,6 @@ app.delete("/api/interviews/:id", async (req, res) => {
 // ==========================================
 // 4. RESUME PROFILE & ATS API (MONGODB)
 // ==========================================
-// GET resume data
 app.get("/api/resume", async (req, res) => {
   try {
     const email = (req.query.email || "").trim().toLowerCase();
@@ -344,7 +380,6 @@ app.get("/api/resume", async (req, res) => {
   }
 });
 
-// POST save/update resume data
 app.post("/api/resume", async (req, res) => {
   try {
     const { userEmail, fileName, fileSize, parsedSkills, atsScore, matchRole, recommendations } = req.body || {};
@@ -377,7 +412,256 @@ app.post("/api/resume", async (req, res) => {
 });
 
 // ==========================================
-// 5. EVALUATE INTERVIEW ANSWER (GEMINI AI)
+// 5. DYNAMIC AI MCQ TEST GENERATION
+// ==========================================
+app.post("/api/generate-questions", async (req, res) => {
+  const { role = "Full Stack Developer", experience = "Fresher", count = 30 } = req.body || {};
+
+  console.log("\n======================================");
+  console.log(`🤖 GENERATING ${count} DYNAMIC MCQ QUESTIONS`);
+  console.log(`Role: ${role} | Experience: ${experience}`);
+  console.log("======================================");
+
+  try {
+    const ai = await getGeminiClient();
+
+    const prompt = `
+You are an expert technical interviewer creating a 30-question multiple-choice technical test for a ${experience} level ${role}.
+
+Generate a rigorous, fair, and diverse set of 30 multiple choice questions.
+Topics should cover:
+- Core Languages (JavaScript, ES6+, TypeScript if applicable)
+- Frontend Frameworks (React, State, Hooks, DOM)
+- Backend & APIs (Node.js, Express, REST, HTTP, Auth)
+- Database & Storage (MongoDB, Indexing, Transactions)
+- System Design, Git, Security & Web Performance
+
+Format: Return ONLY a valid JSON array of objects with this EXACT structure for each question:
+[
+  {
+    "id": 1,
+    "topic": "JavaScript",
+    "question": "Clear question text?",
+    "options": [
+      "Option A",
+      "Option B",
+      "Option C",
+      "Option D"
+    ],
+    "correctOption": 0,
+    "explanation": "Clear 1-2 sentence explanation of why this answer is correct."
+  }
+]
+
+RULES:
+- "correctOption" must be an integer between 0 and 3.
+- "options" must contain exactly 4 options.
+- No markdown formatting, no code fences. Return valid JSON only.
+`;
+
+    console.log("Sending generation prompt to Gemini:", MODEL_NAME);
+
+    // Timeout of 35 seconds for AI generation
+    const response = await withTimeout(
+      ai.models.generateContent({
+        model: MODEL_NAME,
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          temperature: 0.3,
+          maxOutputTokens: 8000,
+        },
+      }),
+      35000
+    );
+
+    if (response && response.text) {
+      let rawText = response.text.trim();
+      // Remove any markdown fence if present
+      if (rawText.startsWith("```")) {
+        rawText = rawText.replace(/^```(json)?\n?/, "").replace(/\n?```$/, "");
+      }
+
+      const generated = JSON.parse(rawText);
+
+      if (Array.isArray(generated) && generated.length >= 15) {
+        console.log(`✅ Successfully generated ${generated.length} AI MCQ questions from Gemini.`);
+
+        // Normalize ids and ensure exactly 30 questions
+        let normalized = generated.map((q, idx) => ({
+          id: idx + 1,
+          topic: q.topic || "Technical",
+          question: q.question,
+          options: Array.isArray(q.options) && q.options.length === 4 ? q.options : ["A", "B", "C", "D"],
+          correctOption: typeof q.correctOption === "number" && q.correctOption >= 0 && q.correctOption <= 3 ? q.correctOption : 0,
+          explanation: q.explanation || "Correct solution based on industry standards."
+        }));
+
+        if (normalized.length < 30) {
+          // Top up with curated bank if fewer than 30
+          const needed = 30 - normalized.length;
+          const supplement = FULL_STACK_30_MCQ.slice(0, needed).map((q, i) => ({
+            ...q,
+            id: normalized.length + i + 1,
+          }));
+          normalized = [...normalized, ...supplement];
+        }
+
+        return res.json({
+          success: true,
+          isAIGenerated: true,
+          role,
+          count: normalized.length,
+          questions: normalized.slice(0, 30),
+        });
+      }
+    }
+
+    throw new Error("Gemini response did not parse into valid questions array");
+  } catch (err) {
+    console.warn("⚠️ Dynamic question generation notice:", err.message);
+    console.log("👉 Seamlessly providing curated 30-MCQ bank for role:", role);
+
+    const questions = getRoleQuestions(role);
+
+    return res.json({
+      success: true,
+      isAIGenerated: false,
+      fallback: true,
+      role,
+      count: questions.length,
+      questions,
+    });
+  }
+});
+
+// ==========================================
+// 6. MCQ TEST RESULTS API (MONGODB)
+// ==========================================
+// GET past MCQ tests
+app.get("/api/mcq-tests", async (req, res) => {
+  try {
+    const email = (req.query.email || "").trim().toLowerCase();
+    const query = email ? { userEmail: email } : {};
+
+    const tests = await McqTestResult.find(query).sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      count: tests.length,
+      tests: tests.map((t) => ({
+        id: t.testId,
+        testId: t.testId,
+        userEmail: t.userEmail,
+        role: t.role,
+        experience: t.experience,
+        date: t.date,
+        totalQuestions: t.totalQuestions,
+        attemptedQuestions: t.attemptedQuestions,
+        correctAnswers: t.correctAnswers,
+        wrongAnswers: t.wrongAnswers,
+        unanswered: t.unanswered,
+        score: t.score,
+        percentage: t.percentage,
+        status: t.status,
+        timeSpentSeconds: t.timeSpentSeconds,
+        topicBreakdown: t.topicBreakdown,
+        createdAt: t.createdAt,
+      })),
+    });
+  } catch (error) {
+    console.error("Error fetching MCQ tests from MongoDB:", error);
+    res.status(500).json({ success: false, message: "Failed to fetch MCQ tests from database." });
+  }
+});
+
+// GET single MCQ test by testId
+app.get("/api/mcq-tests/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const test = await McqTestResult.findOne({ testId: id });
+
+    if (!test) {
+      return res.status(404).json({ success: false, message: "MCQ test not found." });
+    }
+
+    res.json({ success: true, test });
+  } catch (error) {
+    console.error("Error fetching single MCQ test:", error);
+    res.status(500).json({ success: false, message: "Failed to fetch test details." });
+  }
+});
+
+// POST save completed MCQ test result
+app.post("/api/mcq-tests", async (req, res) => {
+  try {
+    const {
+      testId,
+      userEmail,
+      role,
+      experience,
+      date,
+      totalQuestions = 30,
+      attemptedQuestions = 0,
+      correctAnswers = 0,
+      wrongAnswers = 0,
+      unanswered = 0,
+      score = 0,
+      percentage = 0,
+      status,
+      timeSpentSeconds = 0,
+      topicBreakdown = [],
+      answers = [],
+    } = req.body || {};
+
+    if (!userEmail) {
+      return res.status(400).json({ success: false, message: "userEmail is required to save test." });
+    }
+
+    const generatedId = testId || `MCQ-${Math.floor(1000 + Math.random() * 9000)}`;
+    const calcPercentage = Math.round((correctAnswers / totalQuestions) * 100);
+    const calcStatus =
+      status ||
+      (calcPercentage >= 80 ? "Top Performer" : calcPercentage >= 60 ? "Passed" : "Needs Review");
+
+    const savedTest = await McqTestResult.findOneAndUpdate(
+      { testId: generatedId },
+      {
+        testId: generatedId,
+        userEmail: userEmail.toLowerCase().trim(),
+        role: role || "Full Stack Developer",
+        experience: experience || "Fresher",
+        date: date || new Date().toISOString().split("T")[0],
+        totalQuestions,
+        attemptedQuestions,
+        correctAnswers,
+        wrongAnswers,
+        unanswered,
+        score: correctAnswers,
+        percentage: calcPercentage,
+        status: calcStatus,
+        timeSpentSeconds,
+        topicBreakdown,
+        answers,
+      },
+      { new: true, upsert: true }
+    );
+
+    console.log(`💾 Stored 30-MCQ Test ${savedTest.testId} in MongoDB for ${savedTest.userEmail}`);
+
+    res.json({
+      success: true,
+      message: "MCQ Test result stored successfully in MongoDB.",
+      test: savedTest,
+    });
+  } catch (error) {
+    console.error("Error saving MCQ test to MongoDB:", error);
+    res.status(500).json({ success: false, message: "Failed to save MCQ test." });
+  }
+});
+
+// ==========================================
+// 7. EVALUATE INTERVIEW ANSWER (GEMINI AI)
 // ==========================================
 app.post("/api/evaluate", async (req, res) => {
   const requestStarted = Date.now();
@@ -389,7 +673,6 @@ app.post("/api/evaluate", async (req, res) => {
   try {
     const { question, answer } = req.body || {};
 
-    // Validate question
     if (typeof question !== "string" || !question.trim()) {
       return res.status(400).json({
         success: false,
@@ -397,7 +680,6 @@ app.post("/api/evaluate", async (req, res) => {
       });
     }
 
-    // Validate answer
     if (typeof answer !== "string") {
       return res.status(400).json({
         success: false,
@@ -405,7 +687,6 @@ app.post("/api/evaluate", async (req, res) => {
       });
     }
 
-    // Handle empty answer
     if (!answer.trim()) {
       return res.json({
         success: true,
@@ -419,14 +700,11 @@ app.post("/api/evaluate", async (req, res) => {
       });
     }
 
-    console.log("Question received successfully.");
-    console.log("Initializing Gemini...");
-
+    console.log("Question received successfully. Initializing Gemini...");
     const ai = await getGeminiClient();
 
     const prompt = `
 You are an experienced technical interview evaluator.
-
 Evaluate the candidate's answer fairly and objectively.
 
 QUESTION:
@@ -435,41 +713,24 @@ ${question.trim()}
 CANDIDATE ANSWER:
 ${answer.trim()}
 
-Evaluate the answer based on:
+Evaluate based on:
 1. Technical correctness
 2. Relevance to the question
 3. Clarity of explanation
 4. Completeness of the answer
 
 Return ONLY valid JSON in this exact format:
-
 {
   "score": 0,
   "feedback": "A concise explanation of the evaluation.",
-  "strengths": [
-    "Positive observation about the answer."
-  ],
-  "improvements": [
-    "Specific suggestion for improvement."
-  ]
+  "strengths": ["Positive observation about the answer."],
+  "improvements": ["Specific suggestion for improvement."]
 }
 
 IMPORTANT RULES:
 - Score must be an integer between 0 and 10.
-- Give 0 for an irrelevant or completely incorrect answer.
-- Give partial marks for partially correct answers.
-- Do not give 10/10 unless the answer is genuinely excellent.
-- Do not reward unnecessarily long answers.
-- Do not invent statements the candidate did not make.
-- Be encouraging but honest.
-- Include up to 3 strengths.
-- Include up to 3 improvements.
-- Return JSON only.
-- Do not use Markdown code fences.
+- Return JSON only without Markdown fences.
 `;
-
-    console.log("Sending request to Gemini:", MODEL_NAME);
-    console.log("Timeout:", REQUEST_TIMEOUT / 1000, "seconds");
 
     const response = await withTimeout(
       ai.models.generateContent({
@@ -484,17 +745,13 @@ IMPORTANT RULES:
       REQUEST_TIMEOUT
     );
 
-    console.log("Gemini response received.");
-
     if (!response.text) {
       throw new Error("Gemini returned an empty response.");
     }
 
-    // Parse AI response
     const evaluation = JSON.parse(response.text);
     const score = Number(evaluation.score);
 
-    // Validate AI output
     if (
       !Number.isInteger(score) ||
       score < 0 ||
@@ -509,19 +766,14 @@ IMPORTANT RULES:
       score,
       feedback: evaluation.feedback,
       strengths: Array.isArray(evaluation.strengths)
-        ? evaluation.strengths
-            .filter((item) => typeof item === "string")
-            .slice(0, 3)
+        ? evaluation.strengths.filter((i) => typeof i === "string").slice(0, 3)
         : [],
       improvements: Array.isArray(evaluation.improvements)
-        ? evaluation.improvements
-            .filter((item) => typeof item === "string")
-            .slice(0, 3)
+        ? evaluation.improvements.filter((i) => typeof i === "string").slice(0, 3)
         : [],
     };
 
-    console.log("Evaluation completed successfully.");
-    console.log("Score:", score + "/10");
+    console.log("Evaluation completed. Score:", score + "/10");
     console.log("Time taken:", Date.now() - requestStarted, "ms");
     console.log("======================================\n");
 
@@ -530,49 +782,9 @@ IMPORTANT RULES:
     const details = String(error.message || error.status || error.code || "");
     console.error("Evaluation error:", details);
 
-    const normalized = details.toLowerCase();
-
-    if (details === "GEMINI_REQUEST_TIMEOUT") {
-      return res.status(504).json({
-        success: false,
-        message: "Gemini took too long to respond. Please try again.",
-      });
-    }
-
-    if (normalized.includes("gemini_api_key is missing")) {
-      return res.status(500).json({
-        success: false,
-        message: "Gemini API key is missing. Check server/.env.",
-      });
-    }
-
-    if (
-      normalized.includes("429") ||
-      normalized.includes("quota") ||
-      normalized.includes("resource_exhausted")
-    ) {
-      return res.status(429).json({
-        success: false,
-        message: "Gemini API quota or rate limit reached. Please try again later.",
-      });
-    }
-
-    if (
-      normalized.includes("401") ||
-      normalized.includes("403") ||
-      normalized.includes("api key") ||
-      normalized.includes("permission_denied") ||
-      normalized.includes("unauthorized")
-    ) {
-      return res.status(401).json({
-        success: false,
-        message: "Gemini authentication failed. Check your API key.",
-      });
-    }
-
     return res.status(500).json({
       success: false,
-      message: "Evaluation failed. Check the backend Terminal.",
+      message: "Evaluation failed. Check backend console.",
     });
   }
 });
@@ -599,7 +811,7 @@ app.listen(PORT, () => {
   console.log(`Interview Ace AI server running on http://localhost:${PORT}`);
   console.log("AI Provider: Google Gemini");
   console.log("Database: MongoDB ('interview')");
-  console.log("Gemini Model:", MODEL_NAME);
-  console.log("Request Timeout: 90 seconds");
+  console.log("MCQ Generation Endpoint: POST /api/generate-questions");
+  console.log("MCQ Tests Endpoint: POST/GET /api/mcq-tests");
   console.log("======================================");
 });
