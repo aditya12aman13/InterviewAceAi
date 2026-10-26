@@ -8,6 +8,8 @@ import { useAuth } from "../hooks/useAuth";
 import { useMcqTest } from "../hooks/useMcqTest";
 import { POPULAR_ROLES, EXPERIENCE_LEVELS } from "../models/userProfile";
 
+import { generateMcqPdfReport } from "../utils/mcqPdfGenerator";
+
 export default function McqTest() {
   const navigate = useNavigate();
   const { userEmail } = useAuth();
@@ -15,7 +17,7 @@ export default function McqTest() {
   const [selectedRole, setSelectedRole] = useState("Full Stack Developer");
   const [selectedExp, setSelectedExp] = useState("Fresher");
   const [showSubmitModal, setShowSubmitModal] = useState(false);
-  const [filterReview, setFilterReview] = useState("all"); // "all" | "incorrect" | "correct"
+  const [filterReview, setFilterReview] = useState("all"); // "all" | "correct" | "incorrect" | "unattempted"
 
   const {
     role,
@@ -60,149 +62,10 @@ export default function McqTest() {
     return "border-emerald-500/40 bg-emerald-500/10 text-emerald-400";
   };
 
-  // Generate & Download PDF Report Card for MCQ Test
+  // Generate & Download PDF Report Card with color-coded right (green), wrong (red), and unattempted (yellow)
   const downloadMcqPdf = () => {
     if (!testResult) return;
-
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-
-    // Dark Header
-    doc.setFillColor(15, 23, 42); // slate-900
-    doc.rect(0, 0, pageWidth, 42, "F");
-
-    // Blue accent line
-    doc.setFillColor(59, 130, 246);
-    doc.rect(0, 40, pageWidth, 2, "F");
-
-    // Title
-    doc.setTextColor(255, 255, 255);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(20);
-    doc.text("INTERVIEW ACE AI - MOCK MCQ TEST", 16, 20);
-
-    doc.setFontSize(9.5);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(148, 163, 184);
-    doc.text("OFFICIAL TIME-BOUND TECHNICAL ASSESSMENT REPORT", 16, 28);
-    doc.text(`TEST ID: ${testResult.testId || "MCQ-RESULT"} • 25 MINUTE BENCHMARK`, 16, 35);
-
-    // Score Badge
-    doc.setFillColor(30, 41, 59);
-    doc.roundedRect(pageWidth - 75, 12, 60, 22, 3, 3, "F");
-    doc.setTextColor(96, 165, 250);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(14);
-    doc.text(`${testResult.score} / ${testResult.totalQuestions} (${testResult.percentage}%)`, pageWidth - 70, 23);
-    doc.setFontSize(8);
-    doc.setTextColor(203, 213, 225);
-    doc.text(`Status: ${testResult.status}`, pageWidth - 70, 30);
-
-    // Summary Table
-    const minsSpent = Math.floor(testResult.timeSpentSeconds / 60);
-    const secsSpent = testResult.timeSpentSeconds % 60;
-    const timeFormatted = `${minsSpent}m ${secsSpent}s (of 25m)`;
-
-    const summaryData = [
-      ["Candidate Email", testResult.userEmail || "Candidate", "Test Date", testResult.date],
-      ["Target Role", testResult.role, "Experience Level", testResult.experience],
-      ["Correct Answers", `${testResult.correctAnswers} / ${testResult.totalQuestions}`, "Wrong Answers", `${testResult.wrongAnswers}`],
-      ["Unanswered", `${testResult.unanswered}`, "Time Spent", timeFormatted]
-    ];
-
-    autoTable(doc, {
-      startY: 50,
-      body: summaryData,
-      theme: "plain",
-      styles: { fontSize: 9, cellPadding: 2.5, textColor: [30, 41, 59] },
-      columnStyles: {
-        0: { fontStyle: "bold", textColor: [100, 116, 139], cellWidth: 38 },
-        1: { fontStyle: "bold", cellWidth: 55 },
-        2: { fontStyle: "bold", textColor: [100, 116, 139], cellWidth: 38 },
-        3: { fontStyle: "bold", cellWidth: 55 }
-      }
-    });
-
-    // Topic Breakdown Table
-    const startYTopics = (doc.lastAutoTable?.finalY || 80) + 6;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.setTextColor(15, 23, 42);
-    doc.text("COMPETENCY & TOPIC BREAKDOWN", 16, startYTopics);
-
-    const topicRows = (testResult.topicBreakdown || []).map((t) => [
-      t.topic,
-      `${t.correct} / ${t.total}`,
-      `${t.percentage}%`,
-      t.percentage >= 80 ? "Proficient" : t.percentage >= 60 ? "Average" : "Needs Improvement"
-    ]);
-
-    autoTable(doc, {
-      startY: startYTopics + 3,
-      head: [["Topic Area", "Score", "Percentage", "Mastery Level"]],
-      body: topicRows,
-      theme: "striped",
-      headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 8.5 },
-      bodyStyles: { fontSize: 8.5, cellPadding: 2.5, textColor: [30, 41, 59] },
-      alternateRowStyles: { fillColor: [248, 250, 252] },
-      margin: { left: 16, right: 16 }
-    });
-
-    // Question Review Table
-    const startYQuestions = (doc.lastAutoTable?.finalY || 130) + 6;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.setTextColor(15, 23, 42);
-    doc.text("30-QUESTION DETAILED EVALUATION & ANSWERS", 16, startYQuestions);
-
-    const questionRows = (testResult.answers || []).map((a, idx) => {
-      const selectedText = a.selectedOption >= 0 ? a.options[a.selectedOption] : "(Unattempted)";
-      const correctText = a.options[a.correctOption] || "";
-      return [
-        `Q${idx + 1}`,
-        a.question,
-        selectedText,
-        correctText,
-        a.isCorrect ? "CORRECT" : "WRONG",
-        a.explanation || ""
-      ];
-    });
-
-    autoTable(doc, {
-      startY: startYQuestions + 3,
-      head: [["#", "Question", "Your Choice", "Correct Answer", "Result", "Explanation"]],
-      body: questionRows,
-      theme: "striped",
-      headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 8 },
-      bodyStyles: { fontSize: 7.5, cellPadding: 2, textColor: [30, 41, 59] },
-      columnStyles: {
-        0: { cellWidth: 9, fontStyle: "bold", halign: "center" },
-        1: { cellWidth: 46 },
-        2: { cellWidth: 32 },
-        3: { cellWidth: 32 },
-        4: { cellWidth: 16, fontStyle: "bold", halign: "center" },
-        5: { cellWidth: 50 }
-      },
-      alternateRowStyles: { fillColor: [248, 250, 252] },
-      margin: { left: 12, right: 12 }
-    });
-
-    // Footer
-    const totalPages = doc.internal.getNumberOfPages();
-    for (let i = 1; i <= totalPages; i++) {
-      doc.setPage(i);
-      doc.setFontSize(7.5);
-      doc.setTextColor(148, 163, 184);
-      doc.text(
-        `Interview Ace AI | Mock MCQ 30-Question Assessment | Page ${i} of ${totalPages}`,
-        pageWidth / 2,
-        pageHeight - 6,
-        { align: "center" }
-      );
-    }
-
-    doc.save(`InterviewAce_MCQ_${testResult.role.replace(/[^a-zA-Z0-9]/g, "_")}_Scorecard.pdf`);
+    generateMcqPdfReport(testResult, userEmail);
   };
 
   // ==========================================
@@ -600,9 +463,23 @@ export default function McqTest() {
     const minsTaken = Math.floor(testResult.timeSpentSeconds / 60);
     const secsTaken = testResult.timeSpentSeconds % 60;
 
+    const unattemptedCount =
+      testResult.unanswered ??
+      testResult.unattempted ??
+      Math.max(
+        0,
+        (testResult.totalQuestions || 30) -
+          ((testResult.correctAnswers || 0) + (testResult.wrongAnswers || 0))
+      );
+
     const filteredAnswers = (testResult.answers || []).filter((a) => {
-      if (filterReview === "correct") return a.isCorrect;
-      if (filterReview === "incorrect") return !a.isCorrect;
+      const isUnattempted = a.selectedOption === undefined || a.selectedOption === -1;
+      const isRight = !isUnattempted && a.isCorrect;
+      const isWrong = !isUnattempted && !a.isCorrect;
+
+      if (filterReview === "correct") return isRight;
+      if (filterReview === "incorrect") return isWrong;
+      if (filterReview === "unattempted") return isUnattempted;
       return true;
     });
 
@@ -631,9 +508,9 @@ export default function McqTest() {
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   onClick={downloadMcqPdf}
-                  className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-xs font-bold text-white shadow-lg shadow-blue-500/20 hover:bg-blue-500 transition"
+                  className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-3 text-xs font-bold text-white shadow-lg shadow-blue-500/20 hover:from-blue-500 hover:to-indigo-500 transition"
                 >
-                  📄 Download Official PDF Report
+                  📄 Download Color-Coded PDF Report
                 </button>
                 <button
                   onClick={() => navigate("/dashboard")}
@@ -648,45 +525,55 @@ export default function McqTest() {
             <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-blue-500/10 blur-3xl" />
           </div>
 
-          {/* Quick Metrics Grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
-              <span className="text-xs font-semibold text-slate-400 uppercase">Overall Score</span>
+          {/* COLOR-CODED METRICS GRID (GREEN, RED, YELLOW) */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {/* Overall Score */}
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-5 shadow">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Overall Score</span>
               <div className="mt-1 font-mono text-3xl font-extrabold text-blue-400">
-                {testResult.score} <span className="text-xs text-slate-500">/ 30</span>
+                {testResult.score} <span className="text-xs text-slate-500">/ {testResult.totalQuestions || 30}</span>
               </div>
               <span className="text-xs font-semibold text-emerald-400 mt-1 inline-block">
-                {testResult.percentage}% Accuracy
+                {testResult.percentage}% Accuracy ({testResult.status})
               </span>
             </div>
 
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
-              <span className="text-xs font-semibold text-slate-400 uppercase">Correct Answers</span>
-              <div className="mt-1 font-mono text-3xl font-extrabold text-emerald-400">
-                {testResult.correctAnswers}
+            {/* GREEN: Right Answers */}
+            <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-5 shadow-lg shadow-emerald-500/5">
+              <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
+                Right Answers (Green)
+              </span>
+              <div className="mt-1 font-mono text-3xl font-extrabold text-emerald-300">
+                {testResult.correctAnswers || 0}
               </div>
-              <span className="text-xs text-slate-400 mt-1 inline-block">
-                Questions Answered Right
+              <span className="text-xs font-medium text-emerald-300/80 mt-1 inline-block">
+                ✓ Correctly Answered
               </span>
             </div>
 
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
-              <span className="text-xs font-semibold text-slate-400 uppercase">Wrong Answers</span>
-              <div className="mt-1 font-mono text-3xl font-extrabold text-rose-400">
-                {testResult.wrongAnswers}
+            {/* RED: Wrong Answers */}
+            <div className="rounded-2xl border border-rose-500/40 bg-rose-500/10 p-5 shadow-lg shadow-rose-500/5">
+              <span className="text-xs font-bold uppercase tracking-wider text-rose-400">
+                Wrong Answers (Red)
+              </span>
+              <div className="mt-1 font-mono text-3xl font-extrabold text-rose-300">
+                {testResult.wrongAnswers || 0}
               </div>
-              <span className="text-xs text-slate-400 mt-1 inline-block">
-                Incorrect Selections
+              <span className="text-xs font-medium text-rose-300/80 mt-1 inline-block">
+                ✕ Incorrect Choices
               </span>
             </div>
 
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
-              <span className="text-xs font-semibold text-slate-400 uppercase">Performance Status</span>
-              <div className="mt-1 text-2xl font-black text-white">
-                {testResult.status}
+            {/* YELLOW: Not Attempted */}
+            <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-5 shadow-lg shadow-amber-500/5">
+              <span className="text-xs font-bold uppercase tracking-wider text-amber-400">
+                Not Attempted (Yellow)
+              </span>
+              <div className="mt-1 font-mono text-3xl font-extrabold text-amber-300">
+                {unattemptedCount}
               </div>
-              <span className="text-xs text-slate-400 mt-1 inline-block">
-                Benchmark Rating
+              <span className="text-xs font-medium text-amber-300/80 mt-1 inline-block">
+                ⚠ Skipped / Unanswered
               </span>
             </div>
           </div>
@@ -720,99 +607,129 @@ export default function McqTest() {
               <div>
                 <h3 className="text-xl font-bold text-white">Question-by-Question Review</h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Examine your answers against correct solutions and detailed AI explanations.
+                  Color-coded breakdown: <span className="text-emerald-400 font-semibold">Green = Right</span>, <span className="text-rose-400 font-semibold">Red = Wrong</span>, <span className="text-amber-400 font-semibold">Yellow = Not Attempted</span>.
                 </p>
               </div>
 
               {/* Filter tabs */}
-              <div className="flex items-center gap-1.5 rounded-xl border border-slate-800 bg-slate-900/80 p-1 text-xs">
+              <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-slate-800 bg-slate-900/80 p-1 text-xs">
                 <button
                   onClick={() => setFilterReview("all")}
                   className={`rounded-lg px-3 py-1 font-semibold transition ${
                     filterReview === "all" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"
                   }`}
                 >
-                  All (30)
-                </button>
-                <button
-                  onClick={() => setFilterReview("incorrect")}
-                  className={`rounded-lg px-3 py-1 font-semibold transition ${
-                    filterReview === "incorrect" ? "bg-rose-600 text-white" : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  Incorrect ({testResult.wrongAnswers})
+                  All ({testResult.totalQuestions || 30})
                 </button>
                 <button
                   onClick={() => setFilterReview("correct")}
                   className={`rounded-lg px-3 py-1 font-semibold transition ${
-                    filterReview === "correct" ? "bg-emerald-600 text-white" : "text-slate-400 hover:text-white"
+                    filterReview === "correct" ? "bg-emerald-600 text-white" : "text-slate-400 hover:text-emerald-400"
                   }`}
                 >
-                  Correct ({testResult.correctAnswers})
+                  ✓ Right ({testResult.correctAnswers || 0})
+                </button>
+                <button
+                  onClick={() => setFilterReview("incorrect")}
+                  className={`rounded-lg px-3 py-1 font-semibold transition ${
+                    filterReview === "incorrect" ? "bg-rose-600 text-white" : "text-slate-400 hover:text-rose-400"
+                  }`}
+                >
+                  ✕ Wrong ({testResult.wrongAnswers || 0})
+                </button>
+                <button
+                  onClick={() => setFilterReview("unattempted")}
+                  className={`rounded-lg px-3 py-1 font-semibold transition ${
+                    filterReview === "unattempted" ? "bg-amber-600 text-white" : "text-slate-400 hover:text-amber-400"
+                  }`}
+                >
+                  ⚠ Not Attempted ({unattemptedCount})
                 </button>
               </div>
             </div>
 
             {/* Answer Review Cards */}
             <div className="space-y-4">
-              {filteredAnswers.map((item, idx) => (
-                <div
-                  key={idx}
-                  className={`rounded-2xl border p-5 space-y-3.5 ${
-                    item.isCorrect
-                      ? "border-emerald-500/30 bg-emerald-500/5"
-                      : "border-rose-500/30 bg-rose-500/5"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-bold text-blue-400">
-                        Q{item.questionId}
-                      </span>
-                      <span className="rounded-md border border-slate-800 bg-slate-900 px-2 py-0.5 text-[11px] text-slate-300">
-                        {item.topic}
-                      </span>
-                    </div>
+              {filteredAnswers.map((item, idx) => {
+                const isUnattempted = item.selectedOption === undefined || item.selectedOption === -1;
+                const isRight = !isUnattempted && item.isCorrect;
+                const isWrong = !isUnattempted && !item.isCorrect;
 
-                    <span
-                      className={`rounded-full border px-2.5 py-0.5 text-xs font-bold ${
-                        item.isCorrect
-                          ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-400"
-                          : "border-rose-500/40 bg-rose-500/20 text-rose-400"
-                      }`}
-                    >
-                      {item.isCorrect ? "✓ Correct" : "✕ Incorrect"}
-                    </span>
-                  </div>
+                let cardClass = "border-rose-500/30 bg-rose-500/5";
+                let badgeClass = "border-rose-500/40 bg-rose-500/20 text-rose-400";
+                let badgeLabel = "✕ Wrong Answer";
 
-                  <p className="text-sm font-semibold text-slate-100">
-                    {item.question}
-                  </p>
+                if (isRight) {
+                  cardClass = "border-emerald-500/30 bg-emerald-500/5";
+                  badgeClass = "border-emerald-500/40 bg-emerald-500/20 text-emerald-400";
+                  badgeLabel = "✓ Right Answer";
+                } else if (isUnattempted) {
+                  cardClass = "border-amber-500/40 bg-amber-500/5";
+                  badgeClass = "border-amber-500/40 bg-amber-500/20 text-amber-300";
+                  badgeLabel = "⚠ Not Attempted";
+                }
 
-                  {/* Options Comparison */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                    <div className="rounded-xl bg-slate-900/90 p-3">
-                      <span className="text-slate-400 font-semibold block mb-1">Your Selection:</span>
-                      <span className={item.isCorrect ? "font-bold text-emerald-400" : "font-bold text-rose-400"}>
-                        {item.selectedOption >= 0 ? item.options[item.selectedOption] : "(Unanswered)"}
+                return (
+                  <div
+                    key={idx}
+                    className={`rounded-2xl border p-5 space-y-3.5 transition ${cardClass}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs font-bold text-blue-400">
+                          Q{item.questionId || idx + 1}
+                        </span>
+                        <span className="rounded-md border border-slate-800 bg-slate-900 px-2 py-0.5 text-[11px] text-slate-300">
+                          {item.topic || "Technical"}
+                        </span>
+                      </div>
+
+                      <span
+                        className={`rounded-full border px-2.5 py-0.5 text-xs font-bold ${badgeClass}`}
+                      >
+                        {badgeLabel}
                       </span>
                     </div>
 
-                    <div className="rounded-xl bg-slate-900/90 p-3">
-                      <span className="text-slate-400 font-semibold block mb-1">Correct Answer:</span>
-                      <span className="font-bold text-emerald-400">
-                        {item.options[item.correctOption]}
-                      </span>
+                    <p className="text-sm font-semibold text-slate-100">
+                      {item.question}
+                    </p>
+
+                    {/* Options Comparison */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-xl bg-slate-900/90 p-3">
+                        <span className="text-slate-400 font-semibold block mb-1">Your Selection:</span>
+                        <span
+                          className={
+                            isRight
+                              ? "font-bold text-emerald-400"
+                              : isWrong
+                              ? "font-bold text-rose-400"
+                              : "font-bold text-amber-400 italic"
+                          }
+                        >
+                          {isUnattempted
+                            ? "(Not Attempted)"
+                            : item.options[item.selectedOption] || `Option ${item.selectedOption + 1}`}
+                        </span>
+                      </div>
+
+                      <div className="rounded-xl bg-slate-900/90 p-3">
+                        <span className="text-slate-400 font-semibold block mb-1">Correct Answer:</span>
+                        <span className="font-bold text-emerald-400">
+                          {item.options[item.correctOption] || `Option ${item.correctOption + 1}`}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* AI Explanation */}
+                    <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-3 text-xs text-blue-300 leading-relaxed">
+                      <strong className="text-blue-400">AI Explanation: </strong>
+                      {item.explanation}
                     </div>
                   </div>
-
-                  {/* AI Explanation */}
-                  <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-3 text-xs text-blue-300 leading-relaxed">
-                    <strong className="text-blue-400">AI Explanation: </strong>
-                    {item.explanation}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </main>

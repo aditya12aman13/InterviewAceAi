@@ -1,7 +1,5 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
 
 import Navbar from "./components/common/Navbar";
 import Footer from "./components/common/Footer";
@@ -18,7 +16,8 @@ import { useAuth } from "./hooks/useAuth";
 import { useProfile } from "./hooks/useProfile";
 import { useInterviewHistory } from "./hooks/useInterviewHistory";
 import { useResumeParser } from "./hooks/useResumeParser";
-import { getMcqTests } from "./services/api";
+import { getMcqTests, getMcqTestById } from "./services/api";
+import { generateMcqPdfReport } from "./utils/mcqPdfGenerator";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -68,101 +67,19 @@ export default function Dashboard() {
     };
   }, [userEmail]);
 
-  // Download PDF for MCQ test
-  const downloadMcqPdf = (test) => {
+  // Download Official Color-Coded PDF for MCQ test (Green = Right, Red = Wrong, Yellow = Unattempted)
+  const downloadMcqPdf = async (test) => {
     if (!test) return;
-
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-
-    doc.setFillColor(15, 23, 42);
-    doc.rect(0, 0, pageWidth, 42, "F");
-
-    doc.setFillColor(59, 130, 246);
-    doc.rect(0, 40, pageWidth, 2, "F");
-
-    doc.setTextColor(255, 255, 255);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(20);
-    doc.text("INTERVIEW ACE AI - MOCK MCQ TEST", 16, 20);
-
-    doc.setFontSize(9.5);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(148, 163, 184);
-    doc.text("OFFICIAL TIME-BOUND TECHNICAL ASSESSMENT REPORT", 16, 28);
-    doc.text(`TEST ID: ${test.testId || "MCQ-RECORD"} • 25 MINUTE BENCHMARK`, 16, 35);
-
-    doc.setFillColor(30, 41, 59);
-    doc.roundedRect(pageWidth - 75, 12, 60, 22, 3, 3, "F");
-    doc.setTextColor(96, 165, 250);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(14);
-    doc.text(`${test.score} / ${test.totalQuestions || 30} (${test.percentage}%)`, pageWidth - 70, 23);
-    doc.setFontSize(8);
-    doc.setTextColor(203, 213, 225);
-    doc.text(`Status: ${test.status}`, pageWidth - 70, 30);
-
-    const minsSpent = Math.floor((test.timeSpentSeconds || 0) / 60);
-    const secsSpent = (test.timeSpentSeconds || 0) % 60;
-
-    const summaryData = [
-      ["Candidate Email", test.userEmail || userEmail, "Test Date", test.date],
-      ["Target Role", test.role, "Experience Level", test.experience],
-      ["Score & Accuracy", `${test.score} / ${test.totalQuestions || 30} (${test.percentage}%)`, "Time Taken", `${minsSpent}m ${secsSpent}s`]
-    ];
-
-    autoTable(doc, {
-      startY: 50,
-      body: summaryData,
-      theme: "plain",
-      styles: { fontSize: 9, cellPadding: 2.5, textColor: [30, 41, 59] },
-      columnStyles: {
-        0: { fontStyle: "bold", textColor: [100, 116, 139], cellWidth: 38 },
-        1: { fontStyle: "bold", cellWidth: 55 },
-        2: { fontStyle: "bold", textColor: [100, 116, 139], cellWidth: 38 },
-        3: { fontStyle: "bold", cellWidth: 55 }
+    let full = test;
+    if ((!full.answers || full.answers.length === 0) && full.testId) {
+      try {
+        const fetched = await getMcqTestById(full.testId);
+        if (fetched) full = fetched;
+      } catch (e) {
+        console.warn("Could not fetch full MCQ test:", e);
       }
-    });
-
-    const startYTopics = (doc.lastAutoTable?.finalY || 80) + 6;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.setTextColor(15, 23, 42);
-    doc.text("TOPIC COMPETENCY BREAKDOWN", 16, startYTopics);
-
-    const topicRows = (test.topicBreakdown || []).map((t) => [
-      t.topic,
-      `${t.correct} / ${t.total}`,
-      `${t.percentage}%`,
-      t.percentage >= 80 ? "Proficient" : t.percentage >= 60 ? "Average" : "Needs Review"
-    ]);
-
-    autoTable(doc, {
-      startY: startYTopics + 3,
-      head: [["Topic Area", "Score", "Percentage", "Mastery Level"]],
-      body: topicRows,
-      theme: "striped",
-      headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 8.5 },
-      bodyStyles: { fontSize: 8.5, cellPadding: 2.5, textColor: [30, 41, 59] },
-      alternateRowStyles: { fillColor: [248, 250, 252] },
-      margin: { left: 16, right: 16 }
-    });
-
-    const totalPages = doc.internal.getNumberOfPages();
-    for (let i = 1; i <= totalPages; i++) {
-      doc.setPage(i);
-      doc.setFontSize(7.5);
-      doc.setTextColor(148, 163, 184);
-      doc.text(
-        `Interview Ace AI | Mock MCQ 30-Question Assessment | Page ${i} of ${totalPages}`,
-        pageWidth / 2,
-        pageHeight - 6,
-        { align: "center" }
-      );
     }
-
-    doc.save(`InterviewAce_MCQ_${test.role.replace(/[^a-zA-Z0-9]/g, "_")}_Scorecard.pdf`);
+    generateMcqPdfReport(full, userEmail || profile.email || profile.name);
   };
 
   // Tab navigation config
