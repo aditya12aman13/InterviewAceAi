@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import { sendOtp, verifyOtpRegister, loginUser, getContributors } from "../services/api";
+import { sendOtp, verifyOtpRegister, loginUser } from "../services/api";
 import { POPULAR_ROLES, EXPERIENCE_LEVELS } from "../models/userProfile";
 
 export default function Login() {
@@ -36,42 +36,6 @@ export default function Login() {
   const [isVerifying, setIsVerifying] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
-
-  // Contributor accounts
-  const [contributors, setContributors] = useState([
-    {
-      name: "Suyog Shelke",
-      email: "suyog@gmail.com",
-      role: "Full Stack Developer",
-      tag: "Backend & AI Lead",
-      avatar: "👨‍💻",
-      score: "28/30",
-    },
-    {
-      name: "Aditya Aman",
-      email: "aditya@gmail.com",
-      role: "Frontend Developer",
-      tag: "Frontend & UI/UX Lead",
-      avatar: "🎨",
-      score: "27/30",
-    },
-    {
-      name: "Rishav Kumar",
-      email: "rishav@gmail.com",
-      role: "Python / AI Engineer",
-      tag: "MCQ & Analytics Lead",
-      avatar: "🧠",
-      score: "29/30",
-    },
-  ]);
-
-  useEffect(() => {
-    getContributors().then((res) => {
-      if (Array.isArray(res) && res.length > 0) {
-        setContributors(res);
-      }
-    });
-  }, []);
 
   // Timer countdown for OTP modal
   useEffect(() => {
@@ -111,13 +75,6 @@ export default function Login() {
     } finally {
       setIsLoading(false);
     }
-  }
-
-  // 1-Click Contributor Login
-  function handleContributorLogin(contrib) {
-    setError("");
-    setSuccessMessage(`Authenticating as ${contrib.name}...`);
-    login(contrib.email);
   }
 
   // Handle Step 1 of Sign Up: Request Random OTP from MongoDB
@@ -307,41 +264,6 @@ export default function Login() {
           </button>
         </div>
 
-        {/* Contributor Quick Access Bar */}
-        <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
-          <div className="flex items-center justify-between mb-2.5">
-            <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-              <span>👥</span> 1-Click Contributor Logins (MongoDB Ready):
-            </span>
-            <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">
-              Full History Loaded
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            {contributors.map((c) => (
-              <button
-                key={c.email}
-                type="button"
-                onClick={() => handleContributorLogin(c)}
-                className="group relative flex flex-col items-start rounded-xl border border-slate-800 bg-slate-900/80 p-2.5 text-left transition hover:border-blue-500/50 hover:bg-slate-800/90"
-              >
-                <div className="flex items-center justify-between w-full">
-                  <span className="text-base">{c.avatar}</span>
-                  <span className="text-[10px] font-mono font-bold text-blue-400 group-hover:text-blue-300">
-                    Login →
-                  </span>
-                </div>
-                <span className="mt-1 font-bold text-xs text-white truncate w-full">
-                  {c.name.split(" ")[0]}
-                </span>
-                <span className="text-[10px] text-slate-400 truncate w-full">
-                  {c.tag.split(" ")[0]} Lead
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
 
         {/* Alerts */}
         {error && (
