@@ -14,7 +14,9 @@ client/dist/
 # macOS
 .DS_Store
 
-# Automation tools (local only)
+# Automation tools & Local Reports (local only)
 fakegit.*
 push_to_*.bat
 COLLABORATION_GUIDE.md
+PROJECT_REPORT_AND_DEFENSE_GUIDE.md
+InterviewAce_AI_Project_Report.*
