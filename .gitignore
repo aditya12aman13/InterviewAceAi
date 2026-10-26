@@ -17,3 +17,4 @@ client/dist/
 # Automation tools (local only)
 fakegit.*
 push_to_*.bat
+COLLABORATION_GUIDE.md
